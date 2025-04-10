@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>OS Process Visualizer</title>
+  <style>
+    body {
+      background-color: #1f2937;
+      color: white;
+      font-family: sans-serif;
+      padding: 2rem;
+      max-width: 900px;
+      margin: auto;
+    }
+    .card {
+      background: #2d3748;
+      border-radius: 1rem;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    .tabs {
+      display: flex;
+      justify-content: center;
+      margin-bottom: 1.5rem;
+    }
+    .tabs button {
+      padding: 0.5rem 1rem;
+      margin: 0 0.5rem;
+      border: none;
+      border-radius: 1rem;
+      background: #4b5563;
+      color: white;
+      cursor: pointer;
+    }
+    .tabs button.active {
+      background: #2563eb;
+    }
+    .state-boxes {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 1rem;
+    }
+    .state-box {
+      padding: 1rem;
+      width: 120px;
+      text-align: center;
+      border-radius: 1rem;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+      transition: transform 0.2s ease;
+    }
+    .state-box:hover {
+      transform: scale(1.05);
+    }
+    .state-active {
+      background-color: #3b82f6;
+    }
+    .state-inactive {
+      background-color: #4b5563;
+    }
+    .input-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.5rem;
+      text-align: center;
+    }
+    input {
+      padding: 0.3rem;
+      background: #374151;
+      border: 1px solid #6b7280;
+      color: white;
+      border-radius: 0.5rem;
+    }
+    select {
+      padding: 0.5rem;
+      background: #374151;
+      color: white;
+      border-radius: 0.5rem;
+    }
+    canvas {
+      background: white;
+      margin-top: 1rem;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <h1 style="text-align:center;">OS Process Visualization</h1>
+  <div class="tabs">
+    <button id="tab-lifecycle" class="active">Process Lifecycle</button>
+    <button id="tab-scheduling">Scheduling</button>
+  </div>
+
+  <div id="lifecycle" class="card">
+    <h2>Lifecycle</h2>
+    <p style="color: #d1d5db;">Running – Instructions are being executed.<br>Waiting/Blocked – Waiting for some event (like I/O).</p>
+    <div class="state-boxes" id="state-boxes"></div>
+    <div style="text-align:center; margin-top: 1rem;">
+      <button onclick="nextState()" style="margin-right:1rem;" class="tabs-button">Next State</button>
+      <button onclick="altTransition()" class="tabs-button">Alternate Transition</button>
+    </div>
+  </div>
+
+  <div id="scheduling" class="card" style="display:none;">
+    <h2>Scheduling</h2>
+    <label for="algorithm">Select Algorithm:</label>
+    <select id="algorithm">
+      <option value="FCFS">First-Come First-Serve (FCFS)</option>
+      <option value="SJF">Shortest Job First (SJF)</option>
+      <option value="RoundRobin">Round Robin</option>
+      <option value="Priority">Priority Scheduling</option>
+    </select>
+
+    <div class="input-grid" style="margin-top: 1rem; font-weight:bold;">
+      <div>Process</div><div>Arrival</div><div>Burst</div><div>Priority</div>
+    </div>
+    <div id="process-list"></div>
+    <div style="text-align:center; margin-top: 1rem;">
+      <button onclick="addProcess()" style="background:#10b981; padding:0.5rem 1rem; border:none; border-radius:0.5rem;">Add Process</button>
+    </div>
+    <canvas id="gantt" height="200"></canvas>
+  </div>
+
+  <script>
+    const states = ["New", "Ready", "Running", "Waiting", "Terminated"];
+    const transitions = {
+      New: "Ready",
+      Ready: "Running",
+      Running: ["Waiting", "Terminated"],
+      Waiting: "Ready",
+    };
+    let currentState = "New";
+
+    const processes = [
+      { name: "P1", arrival: 0, burst: 5, priority: 2 },
+      { name: "P2", arrival: 1, burst: 3, priority: 1 },
+      { name: "P3", arrival: 2, burst: 8, priority: 3 },
+      { name: "P4", arrival: 3, burst: 6, priority: 4 },
+    ];
+
+    function renderStates() {
+      const container = document.getElementById("state-boxes");
+      container.innerHTML = '';
+      states.forEach(state => {
+        const div = document.createElement("div");
+        div.className = "state-box " + (currentState === state ? "state-active" : "state-inactive");
+        div.textContent = state;
+        container.appendChild(div);
+      });
+    }
+
+    function nextState() {
+      const next = transitions[currentState];
+      if (!next) return;
+      currentState = Array.isArray(next) ? next[0] : next;
+      renderStates();
+    }
+
+    function altTransition() {
+      const next = transitions[currentState];
+      if (Array.isArray(next)) {
+        currentState = next[1];
+        renderStates();
+      }
+    }
+
+    function renderProcesses() {
+      const list = document.getElementById("process-list");
+      list.innerHTML = '';
+      processes.forEach((p, i) => {
+        list.innerHTML += `
+          <div class="input-grid">
+            <input value="${p.name}" onchange="updateProcess(${i}, 'name', this.value)" />
+            <input type="number" value="${p.arrival}" onchange="updateProcess(${i}, 'arrival', this.value)" />
+            <input type="number" value="${p.burst}" onchange="updateProcess(${i}, 'burst', this.value)" />
+            <input type="number" value="${p.priority}" onchange="updateProcess(${i}, 'priority', this.value)" />
+          </div>
+        `;
+      });
+      drawGantt();
+    }
+
+    function updateProcess(index, field, value) {
+      processes[index][field] = field === 'name' ? value : parseInt(value);
+      drawGantt();
+    }
+
+    function addProcess() {
+      processes.push({ name: `P${processes.length + 1}`, arrival: 0, burst: 1, priority: 1 });
+      renderProcesses();
+    }
+
+    function drawGantt() {
+      const algorithm = document.getElementById("algorithm").value;
+      const canvas = document.getElementById("gantt");
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const data = simulateScheduling(algorithm);
+      let barHeight = 30;
+      let y = 0;
+
+      data.forEach((item, i) => {
+        ctx.fillStyle = getColor(item.name);
+        ctx.fillRect(item.start * 30, y, item.duration * 30, barHeight);
+        ctx.fillStyle = "black";
+        ctx.fillText(`${item.name}`, item.start * 30 + 5, y + 20);
+        y += barHeight + 10;
+      });
+    }
+
+    const colorMap = {};
+    function getColor(name) {
+      if (!colorMap[name]) {
+        colorMap[name] = "#" + Math.floor(Math.random()*16777215).toString(16);
+      }
+      return colorMap[name];
+    }
+
+    function simulateScheduling(algo) {
+      let queue = [...processes];
+      let timeline = [];
+      let time = 0;
+
+      switch (algo) {
+        case "FCFS":
+          queue.sort((a, b) => a.arrival - b.arrival);
+          queue.forEach(p => {
+            if (time < p.arrival) time = p.arrival;
+            timeline.push({ name: p.name, start: time, duration: p.burst });
+            time += p.burst;
+          });
+          break;
+        case "SJF":
+          let sjfQueue = [], arrived = [];
+          while (queue.length || arrived.length) {
+            queue = queue.filter(p => {
+              if (p.arrival <= time) {
+                arrived.push(p);
+                return false;
+              }
+              return true;
+            });
+            arrived.sort((a, b) => a.burst - b.burst);
+            if (arrived.length === 0) {
+              time++;
+              continue;
+            }
+            let p = arrived.shift();
+            timeline.push({ name: p.name, start: time, duration: p.burst });
+            time += p.burst;
+          }
+          break;
+        case "Priority":
+          let prioQueue = [];
+          while (queue.length || prioQueue.length) {
+            queue = queue.filter(p => {
+              if (p.arrival <= time) {
+                prioQueue.push(p);
+                return false;
+              }
+              return true;
+            });
+            prioQueue.sort((a, b) => a.priority - b.priority);
+            if (prioQueue.length === 0) {
+              time++;
+              continue;
+            }
+            let p = prioQueue.shift();
+            timeline.push({ name: p.name, start: time, duration: p.burst });
+            time += p.burst;
+          }
+          break;
+        case "RoundRobin":
+          let quantum = 2, timeRR = 0, ready = [], pending = [...queue].sort((a, b) => a.arrival - b.arrival);
+          while (pending.length || ready.length) {
+            while (pending.length && pending[0].arrival <= timeRR) {
+              let p = pending.shift();
+              ready.push({ ...p, remaining: p.burst });
+            }
+            if (!ready.length) {
+              timeRR = pending[0].arrival;
+              continue;
+            }
+            let p = ready.shift();
+            let exec = Math.min(quantum, p.remaining);
+            timeline.push({ name: p.name, start: timeRR, duration: exec });
+            timeRR += exec;
+            p.remaining -= exec;
+            while (pending.length && pending[0].arrival <= timeRR) {
+              let np = pending.shift();
+              ready.push({ ...np, remaining: np.burst });
+            }
+            if (p.remaining > 0) ready.push(p);
+          }
+          break;
+      }
+      return timeline;
+    }
+
+    document.getElementById("algorithm").addEventListener("change", drawGantt);
+
+    document.getElementById("tab-lifecycle").addEventListener("click", () => {
+      document.getElementById("lifecycle").style.display = "block";
+      document.getElementById("scheduling").style.display = "none";
+      document.getElementById("tab-lifecycle").classList.add("active");
+      document.getElementById("tab-scheduling").classList.remove("active");
+    });
+
+    document.getElementById("tab-scheduling").addEventListener("click", () => {
+      document.getElementById("lifecycle").style.display = "none";
+      document.getElementById("scheduling").style.display = "block";
+      document.getElementById("tab-scheduling").classList.add("active");
+      document.getElementById("tab-lifecycle").classList.remove("active");
+    });
+
+    // Initial rendering
+    renderStates();
+    renderProcesses();
+  </script>
+</body>
+</html>
